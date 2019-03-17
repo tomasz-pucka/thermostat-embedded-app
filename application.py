@@ -1,58 +1,41 @@
 from flask import *
 
-# import Adafruit_DHT
-# import Adafruit_BBIO.PWM as PWM
+import Adafruit_DHT
+import Adafruit_BBIO.GPIO as GPIO
 
 app = Flask(__name__)
 
-max_duty_cycle = 100
-min_duty_cycle = 30
-start = False
-accuracy = 3
-duty_cycle = min_duty_cycle
-set_temp = 0
-actual_temp = 0
-thermostat_state = False
+set_temp = 0  # temperatura ustawiona w aplikacji
+actual_temp = 0  # temperatura odczytana z urzadzenia
+avg_temp = 0  # temperatura po usunięciu wartości odstających i uśredniona
+thermostat_state = False  # stan termostatu
+fan_output = 0  # zasilanie wiatraczka
+sensor = Adafruit_DHT.DHT11
+sensor_pin = 'P8_11'  # DHT-11 data
+fan_pin = 'P8_10'  # zasilanie diody
 
 
-# pwm_pin = 'P9_14'
-
-# sensor = Adafruit_DHT.DHT11
-# sensor_pin = 'P8_11'
-
-def getActualTemperature():
-    temp = 25
-    # hum, temp = Adafruit_DHT.read_retry(sensor, sensor_pin)
-    return temp
-
-
-@app.route('/')
+@app.route('/')  # strona główna w aplikacji webowej
 def index():
     return render_template('index.html')
 
 
-@app.route('/actualTemp')
+def getActualTemperature():  # odczyt temperatury z DHT-11
+    temp = 25
+    hum, temp = Adafruit_DHT.read_retry(sensor, sensor_pin)
+    return temp
+
+
+@app.route('/actualTemp')  # udostępnienie aktualnej temperatury do aplikacji webowej
 def thermostatProcess():
-    global actual_temp, duty_cycle, start
-    if (thermostat_state == True):
+    global actual_temp, fan_output
+    if thermostat_state == True:
         actual_temp = getActualTemperature()
-        if start and set_temp <= actual_temp:
-            duty_cycle = (1 - (set_temp / actual_temp) ** 8) * 100
-            start = False
-        if start and set_temp > actual_temp:
-            duty_cycle = min_duty_cycle
-            start = False
-        duty_cycle += (duty_cycle * (1 - (set_temp / actual_temp))) / accuracy  # round; /accuracy
-        if (duty_cycle > max_duty_cycle):
-            duty_cycle = max_duty_cycle
-        if (duty_cycle < min_duty_cycle):
-            duty_cycle = min_duty_cycle
-        duty_cycle = round(duty_cycle, 1)
-        # PWM.set_duty_cycle(pwm_pin, duty_cycle)
-    return render_template('actualTemp.html', temp=actual_temp, duty_cycle=duty_cycle)
+    # przekazanie do aplikacji odczytanej temperatury (temp) oraz stanu zasilania wiatraczka (fan_output)
+    return render_template('actualTemp.html', temp=actual_temp, diode=str(fan_output))
 
 
-@app.route('/setTemp', methods=['POST'])
+@app.route('/setTemp', methods=['POST'])  # pobranie ustawionej temperatury z aplikacji
 def setTemp():
     global set_temp
     content = request.get_json()
@@ -60,24 +43,39 @@ def setTemp():
     return 'Temp posted'
 
 
-@app.route('/setAccuracy', methods=['POST'])
-def setAccuracy():
-    global accuracy
-    content = request.get_json()
-    accuracy = float(content['accuracy'])
-    return 'Accuracy posted'
-
-
-@app.route('/toggleState', methods=['POST'])
+@app.route('/toggleState', methods=['POST'])  # przełączanie stanu termostatu
 def toggleState():
-    global thermostat_state, start
+    global thermostat_state, fan_output, actual_temp
     content = request.get_json()
     thermostat_state = content['state']
-    if (thermostat_state == True):
-        start = True
+    actual_temp = getActualTemperature()
+    if thermostat_state:  # wstępne nastawienie termostatu, jeśli jest uruchomiony
+        if set_temp <= actual_temp:
+            fan_output = 1
+            GPIO.output(fan_pin, GPIO.HIGH)
+        if set_temp > actual_temp:
+            fan_output = 0
+            GPIO.output(fan_pin, GPIO.LOW)
+    else:
+        GPIO.output(fan_pin, GPIO.LOW)
+        fan_output = 0
     return 'State posted'
+
+@app.route('/thermostatCorrections', methods=['POST'])
+def thermostatCorrections():
+    global set_temp, avg_temp, fan_output
+    content = request.get_json()
+    avg_temp = float(content['avgTemp'])
+    # regulacja stanu wiatraczka w zaleznosci od temperatury
+    if set_temp <= avg_temp:
+        fan_output = 1
+        GPIO.output(fan_pin, GPIO.HIGH)
+    if set_temp > avg_temp:
+        fan_output = 0
+        GPIO.output(fan_pin, GPIO.LOW)
+    return 'Thermostat corrections made'
 
 
 if __name__ == '__main__':
-    # PWM.start(pwm_pin, 0, 25000)
-    app.run(host='127.0.0.1', port=8080, debug=True)
+    GPIO.setup(fan_pin, GPIO.OUT)
+    app.run(host='192.168.0.114', port=8080, debug=True)
