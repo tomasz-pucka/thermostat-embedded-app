@@ -5,110 +5,91 @@
 </head>
 <body>
 <h1>Termostat</h1>
-Podaj wymaganą temperaturę:<br/>
-<input type="number" id="desired-temp" step="1" value="22"><button id="set-desired-temp">Ustaw</button><br/>
+Podaj wymaganą temperaturę w pojemniku:<br/>
+<input type="number" id="desired-temp" step="0.1" value="22"><button id="set-desired-temp">Ustaw</button><br/>
+Podaj dokładność:<br/>
+<input type="number" id="accuracy" step="0.1" value="1"><button id="set-accuracy">Ustaw</button><br/>
 Ustawiona temperatura: <span id="monitor-desired-temp"></span><br/>
-Aktualna temperatura środowiska: <span id="monitor-actual-temp">-</span> °C<br/>
-Zasilanie silnika: <span id="monitor-fan-output">-</span><br/><br/>
-
+Dokładność: <span id="monitor-accuracy"></span><br/>
+Współczynnik wypełnienia impulsu: <span id="monitor-duty-cycle">-</span><br/>
+Aktualna temperatura w pojemniku: <span id="monitor-actual-temp">-</span> °C<br/><br/>
 Termostat: <button id="toggle-state">Włącz</button>
 
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
-</body>
 <script>
-    let state=false;
-    let start = true;
-    let pause=500;
-    let isTempSet = false;
-    let tempList = [];
-    let i;
-    $(document).ready(function () {
+let state=false
+let pause=1500
+let isTempSet = false
+let isAccuracySet = false
+$(document).ready(function () {
         setInterval(function () {
             if(state==true){
                 $.ajax({
                     url: "/actualTemp",
                     type: "GET",
                     dataType: "html",
-                    // pobieranie aktualnej temperatury
-                    // przekazywanie uśrednionej wartości co 18 pobrań do serwera
                     success: function (response) {
-                        resSplit = response.split("\n");
-                        // dodanie do tablicy aktualnej temperatury
-                        tempList.push(parseInt(resSplit[2]));
-                        // wstępne wyświetlanie aktualnej temperatury po starcie
-                        if (start == true) {
-                            $("#monitor-actual-temp").html(resSplit[2])
-                            start = false
-                        }
-                        // wyświetlanie stanu zasilania wiatraczka
-                        $("#monitor-fan-output").html(resSplit[5]);
-                        // przekazanie do serwera średniej temperatury
-                        // po usunięciu wartości odstających z 18 próbek
-                        if (tempList.length >= 18) {
-                            let temp_sum = 0;
-                            for (i=0;i<18;i++) {
-                                temp_sum+=tempList[i]
-                            }
-                            temp_sum -= Math.max.apply(null, tempList);
-                            temp_sum -= Math.min.apply(null, tempList);
-                            temp_sum = temp_sum / 16;
-                            $("#monitor-actual-temp").html(temp_sum);
-                            $.ajax({
-                                url: "/thermostatCorrections",
-                                type: "POST",
-                                contentType: "application/json; charset=UTF-8",
-                                data: JSON.stringify({avgTemp: temp_sum}),
-                                success: function (msg) {
-                                    console.log(msg)
-                                }
-                            })
-                            tempList = []
-                        }
+                        resSplit = response.split("\n")
+                        $("#monitor-actual-temp").html(resSplit[2]);
+                        $("#monitor-duty-cycle").html(resSplit[5]);
                     }
                 })
+            } else {
+                document.getElementById("monitor-actual-temp").innerHTML = '-'
+                document.getElementById("monitor-duty-cycle").innerHTML = '-'
             }
         }, pause);
-    });
+});
 
-    $("#set-desired-temp").click(function () {
-        isTempSet = true;
-        document.getElementById("monitor-desired-temp").innerHTML = document.getElementById("desired-temp").value + ' °C';
+$("#set-desired-temp").click(function () {
+    isTempSet = true
+    document.getElementById("monitor-desired-temp").innerHTML = document.getElementById("desired-temp").value + ' °C'
+    $.ajax({
+        url: "/setTemp",
+        type: "POST",
+        contentType: "application/json; charset=UTF-8",
+        data: JSON.stringify({desiredTemp: document.getElementById("desired-temp").value}),
+        success: function (msg) {
+            console.log(msg)
+        }
+    })
+});
+
+$("#set-accuracy").click(function () {
+    isAccuracySet = true
+    document.getElementById("monitor-accuracy").innerHTML = document.getElementById("accuracy").value
+    $.ajax({
+        url: "/setAccuracy",
+        type: "POST",
+        contentType: "application/json; charset=UTF-8",
+        data: JSON.stringify({accuracy: document.getElementById("accuracy").value}),
+        success: function (msg) {
+            console.log(msg)
+        }
+    })
+});
+
+$("#toggle-state").click(function () {
+    if(isTempSet && isAccuracySet) {
+        state = !state
+        if(state==false) {
+            document.getElementById("toggle-state").innerHTML = 'Włącz'
+        } else {
+            document.getElementById("toggle-state").innerHTML = 'Wyłącz'
+        }
         $.ajax({
-            url: "/setTemp",
+            url: "/toggleState",
             type: "POST",
             contentType: "application/json; charset=UTF-8",
-            data: JSON.stringify({desiredTemp: document.getElementById("desired-temp").value}),
+            data: JSON.stringify({state: state}),
             success: function (msg) {
                 console.log(msg)
             }
         })
-    });
-
-    $("#toggle-state").click(function () {
-        if(isTempSet) {
-            state = !state;
-            if(state==false) {
-                document.getElementById("toggle-state").innerHTML = 'Włącz'
-                document.getElementById("monitor-actual-temp").innerHTML = '-';
-                document.getElementById("monitor-fan-output").innerHTML = '-';
-                tempList = []
-
-            } else {
-                document.getElementById("toggle-state").innerHTML = 'Wyłącz'
-                start = true
-            }
-            $.ajax({
-                url: "/toggleState",
-                type: "POST",
-                contentType: "application/json; charset=UTF-8",
-                data: JSON.stringify({state: state}),
-                success: function (msg) {
-                    console.log(msg)
-                }
-            })
-        } else {
-            alert('Proszę ustawić temperature.')
-        }
-    });
+    } else {
+        alert('Proszę ustawić temperature i dokładność.')
+    }
+});
 </script>
+</body>
 </html>
