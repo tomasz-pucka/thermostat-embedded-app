@@ -1,0 +1,95 @@
+<html>
+<head>
+    <title>Termostat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<h1>Termostat</h1>
+Podaj wymaganą temperaturę w pojemniku:<br/>
+<input type="number" id="desired-temp" step="0.1" value="22"><button id="set-desired-temp">Ustaw</button><br/>
+Podaj dokładność:<br/>
+<input type="number" id="accuracy" step="0.1" value="1"><button id="set-accuracy">Ustaw</button><br/>
+Ustawiona temperatura: <span id="monitor-desired-temp"></span><br/>
+Dokładność: <span id="monitor-accuracy"></span><br/>
+Współczynnik wypełnienia impulsu: <span id="monitor-duty-cycle">-</span><br/>
+Aktualna temperatura w pojemniku: <span id="monitor-actual-temp">-</span> °C<br/><br/>
+Termostat: <button id="toggle-state">Włącz</button>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script>
+let state=false
+let pause=1500
+let isTempSet = false
+let isAccuracySet = false
+$(document).ready(function () {
+        setInterval(function () {
+            if(state==true){
+                $.ajax({
+                    url: "/actualTemp",
+                    type: "GET",
+                    dataType: "html",
+                    success: function (response) {
+                        resSplit = response.split("\n")
+                        $("#monitor-actual-temp").html(resSplit[2]);
+                        $("#monitor-duty-cycle").html(resSplit[5]);
+                    }
+                })
+            } else {
+                document.getElementById("monitor-actual-temp").innerHTML = '-'
+                document.getElementById("monitor-duty-cycle").innerHTML = '-'
+            }
+        }, pause);
+});
+
+$("#set-desired-temp").click(function () {
+    isTempSet = true
+    document.getElementById("monitor-desired-temp").innerHTML = document.getElementById("desired-temp").value + ' °C'
+    $.ajax({
+        url: "/setTemp",
+        type: "POST",
+        contentType: "application/json; charset=UTF-8",
+        data: JSON.stringify({desiredTemp: document.getElementById("desired-temp").value}),
+        success: function (msg) {
+            console.log(msg)
+        }
+    })
+});
+
+$("#set-accuracy").click(function () {
+    isAccuracySet = true
+    document.getElementById("monitor-accuracy").innerHTML = document.getElementById("accuracy").value
+    $.ajax({
+        url: "/setAccuracy",
+        type: "POST",
+        contentType: "application/json; charset=UTF-8",
+        data: JSON.stringify({accuracy: document.getElementById("accuracy").value}),
+        success: function (msg) {
+            console.log(msg)
+        }
+    })
+});
+
+$("#toggle-state").click(function () {
+    if(isTempSet && isAccuracySet) {
+        state = !state
+        if(state==false) {
+            document.getElementById("toggle-state").innerHTML = 'Włącz'
+        } else {
+            document.getElementById("toggle-state").innerHTML = 'Wyłącz'
+        }
+        $.ajax({
+            url: "/toggleState",
+            type: "POST",
+            contentType: "application/json; charset=UTF-8",
+            data: JSON.stringify({state: state}),
+            success: function (msg) {
+                console.log(msg)
+            }
+        })
+    } else {
+        alert('Proszę ustawić temperature i dokładność.')
+    }
+});
+</script>
+</body>
+</html>
